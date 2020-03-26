@@ -8,7 +8,7 @@ from torchviz import make_dot
 from torch.autograd import Variable
 
 
-def plot_to_local(index:int, tensors, directory: Path = Path("./results")):
+def plot_to_local(index: int, tensors, directory: Path = Path("./results")):
     '''
         Save pytorch tensor images to results folder with its index
     '''
@@ -17,7 +17,6 @@ def plot_to_local(index:int, tensors, directory: Path = Path("./results")):
 
     save_path = directory / Path(f"{index}.jpg")
     vutils.save_image(tensors, save_path, padding=0, normalize=True, scale_each=True)
-
 
 
 def plot_images_to_wandb(images: list, name: str):

@@ -25,7 +25,6 @@ def main(args):
         This example script contains way to utilize this framework repository on Cifar-10
         - how to use dataloaders
         - how to use modelwrapper
-        - how to adjust fc of given model
     '''
 
     if not args.checkpoints.exists():
