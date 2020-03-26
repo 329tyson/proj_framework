@@ -1,4 +1,5 @@
 import tqdm
+import wandb
 import torch
 import argparse
 
@@ -12,11 +13,14 @@ import torchvision.transforms as transforms
 from pathlib import Path
 
 from utils.vis_utils import plot_to_local
+from utils.vis_utils import plot_images_to_wandb
 from utils.layer_utils import summarize_network
 from utils.layer_utils import adjust_last_fc
 from utils.augmentation import imagenet_normalize
 from parsers.basic_parser import base_parser
 from evaluations.evaluator import count_match
+from evaluations.evaluator import log_best_state
+from evaluations.evaluator import evaluate_classification
 # from clfnets.example_network import ExampleNetwork
 
 
@@ -30,6 +34,9 @@ def main(args):
     if not args.checkpoints.exists():
         print(f"Path {args.checkpoints} doesn't exists, Making one...")
         Path.mkdir(args.checkpoints)
+    else:
+        pass
+        # Checkpoint directory already exists...?
 
     # Build your dataloader here or from another script
     tsfrm = transforms.Compose([
@@ -66,6 +73,7 @@ def main(args):
 
     model = models.resnet18(pretrained=True)
     adjust_last_fc(model, args.num_class)
+    wandb.watch(model)
     model.cuda()
 
     summarize_network(model, input_size=(3, 32, 32))
@@ -85,10 +93,9 @@ def main(args):
     idx = 0
     best_acc = 0.
     for epoch in range(args.epochs):
-        test_loss = 0
+        model.train()
         clf_loss = 0
-        total_hit = 0
-        for batch in tqdm.tqdm(cifar_loader, desc=f"Training[{epoch}]"):
+        for i, batch in enumerate(tqdm.tqdm(cifar_loader, desc=f"Training[{epoch}]")):
             image, label = batch
             image = image.cuda()
             label = label.cuda()
@@ -96,8 +103,12 @@ def main(args):
             pred = model(image)
 
             # uncomment following lines to plot training images
-            if epoch == 1 and args.vis:
-                plot_to_local(idx, image[:4])
+            if i == 0 and args.vis:
+                # If you want to plot images to local
+                # plot_to_local(idx, image[:4])
+
+                # If you want to plot images to wandb
+                plot_images_to_wandb(image[:4], name="Train_images", step=epoch)
                 idx += 1
 
             loss = criterion(pred, label)
@@ -106,30 +117,20 @@ def main(args):
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+        wandb.log({
+            "Loss@Clf": clf_loss / len(cifar_loader),
+        }, step=epoch)
+
         print(f"Epoch[{epoch}] loss: {clf_loss / len(cifar_loader)}")
 
-        with torch.no_grad():
-            model.eval()
-            for batch in tqdm.tqdm(cifar_test_loader, desc=f"Testing[{epoch}]"):
-                image, label = batch
-                image = image.cuda()
-                label = label.cuda()
-
-                pred = model(image)
-                total_hit += count_match(pred, label)
-                loss = criterion(pred, label)
-
-                test_loss += loss.item()
-
-        model.train()
-        acc = total_hit / len(cifar_test) * 100
-        print(f"Epoch[{epoch}] test loss: {test_loss / len(cifar_test_loader)}, acc: {acc:.3f}")
-
-        if acc > best_acc:
-            best_acc = acc
+        acc = evaluate_classification(model, cifar_test_loader, epoch=epoch)
+        best_acc = log_best_state(model, args.desc, acc, best_acc)
 
 
 if __name__ == '__main__':
-    parser = base_parser()
+    parser = argparse.ArgumentParser(parents=[base_parser()])
+    parser.add_argument("--wandb_proj_name", type=str, required=True)
+
     args = parser.parse_args()
+    wandb.init(project=args.wandb_proj_name, name=args.desc, config=args)
     main(args)

@@ -19,9 +19,9 @@ def plot_to_local(index: int, tensors, directory: Path = Path("./results")):
     vutils.save_image(tensors, save_path, padding=0, normalize=True, scale_each=True)
 
 
-def plot_images_to_wandb(images: list, name: str):
+def plot_images_to_wandb(images: list, name: str, step: int):
     # images are should be list of RGB images tensors in shape (C, H, W)
-    images = vutils.make_grid(images, normalize=True, range=(-2.11785, 2.64005))
+    images = vutils.make_grid(images, normalize=True, scale_each=True, padding=1)
 
     if images.dim() == 3:
         images = images.permute(1, 2, 0)
@@ -29,7 +29,7 @@ def plot_images_to_wandb(images: list, name: str):
 
     images = wandb.Image(images, caption=name)
 
-    wandb.log({name: images})
+    wandb.log({name: images}, step=step)
 
 
 def plot_network(model, name):
