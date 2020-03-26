@@ -14,6 +14,10 @@ from pathlib import Path
 
 from utils.vis_utils import plot_to_local
 from utils.vis_utils import plot_images_to_wandb
+from utils.vis_utils import Hook_Feature
+from utils.vis_utils import Hook_Grad
+from utils.vis_utils import compute_gradCAMs
+from utils.vis_utils import plot_gradcam
 from utils.layer_utils import summarize_network
 from utils.layer_utils import adjust_last_fc
 from utils.augmentation import imagenet_normalize
@@ -50,8 +54,8 @@ def main(args):
         imagenet_normalize(),
     ])
 
-    cifar_dataset = datasets.CIFAR10("/data/Cifar10/", train=True, transform=tsfrm, download=True)
-    cifar_test = datasets.CIFAR10("/data/Cifar10/", train=False, transform=test_tsfrm, download=True)
+    cifar_dataset = datasets.CIFAR10("/data/Cifar10/", train=True, transform=tsfrm, download=False)
+    cifar_test = datasets.CIFAR10("/data/Cifar10/", train=False, transform=test_tsfrm, download=False)
 
     cifar_loader = data.DataLoader(
         dataset=cifar_dataset,
@@ -92,6 +96,11 @@ def main(args):
     print(f"Cifar10 load complete with len({len(cifar_loader)}/{len(cifar_dataset)})")
     idx = 0
     best_acc = 0.
+
+    # If you want to plot GradCAMs over images
+    features = Hook_Feature(model.layer2)
+    grads = Hook_Grad(model.layer2)
+
     for epoch in range(args.epochs):
         model.train()
         clf_loss = 0
@@ -102,19 +111,25 @@ def main(args):
 
             pred = model(image)
 
-            # uncomment following lines to plot training images
-            if i == 0 and args.vis:
-                # If you want to plot images to local
-                # plot_to_local(idx, image[:4])
-
-                # If you want to plot images to wandb
-                plot_images_to_wandb(image[:4], name="Train_images", step=epoch)
-                idx += 1
-
             loss = criterion(pred, label)
             clf_loss += loss.item()
 
             loss.backward()
+
+            if i == 0 and args.vis:
+                # plot GradCAM here
+                overlays = compute_gradCAMs(features.features, grads.grad)
+                grad_cams = plot_gradcam(overlays, image)
+
+                # If you want to plot images to local
+                # plot_to_local(idx, image[:4])
+
+                # If you want to plot images to wandb
+                # plot_images_to_wandb(image[:4], name="Train_images", step=epoch)
+                plot_images_to_wandb(grad_cams[:4], name="GradCams", step=epoch)
+                idx += 1
+
+
             optimizer.step()
             optimizer.zero_grad()
         wandb.log({

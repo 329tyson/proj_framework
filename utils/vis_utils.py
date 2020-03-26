@@ -1,6 +1,9 @@
+import cv2
 import torch
 import wandb
 
+import numpy as np
+import torchvision.transforms as transforms
 import torchvision.utils as vutils
 
 from pathlib import Path
@@ -44,3 +47,58 @@ def plot_network(model, name):
         Path.mkdir(save_path.parent)
 
     g.render(f"model_plots/{name}")
+
+
+
+class Hook_Grad():
+    grad = None
+    def __init__(self, m):
+        self.hook = m.register_backward_hook(self.hook_fn)
+
+    def hook_fn(self, module, input, output):
+        self.grad = torch.sum(torch.abs(output[0].detach()), dim=1)
+
+    def remove(self):
+        self.hook.remove()
+
+
+class Hook_Feature():
+    features = None
+
+    def __init__(self, m):
+        self.hook = m.register_forward_hook(self.hook_fn)
+
+    def hook_fn(self, module, input, output):
+        self.features = output
+
+    def remove(self):
+        self.hook.remove()
+
+
+def compute_gradCAMs(feature, grad):
+    b, c, h, w = feature.shape
+    weight = torch.unsqueeze(grad, dim=1)
+
+    gradCAM = (feature * weight).sum(dim=1)
+    gradCAM = gradCAM.view(b, h, w)
+
+    return gradCAM
+
+def plot_gradcam(overlay, image, image_size=(32, 32)):
+    image = image.detach().cpu()
+    cams = []
+    for ov, im in zip(overlay, image):
+        ov -= ov.min()
+        ov /= ov.max()
+        ov = ov.detach().cpu().numpy()
+        ov = cv2.resize(ov, image_size)
+        heatmap = cv2.applyColorMap(np.uint8(255 * ov), cv2.COLORMAP_JET)
+        heatmap[np.where(heatmap < 0.2)] = 0
+        heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+        heatmap = transforms.ToTensor()(heatmap)
+        heatmap = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(heatmap)
+        cam = im + heatmap * 0.5
+        cams.append(cam)
+
+    cams = torch.stack(cams, dim=0)
+    return cams
