@@ -33,6 +33,9 @@ def main(args):
         This example script contains way to utilize this framework repository on Cifar-10
         - how to use dataloaders
         - how to use modelwrapper
+        - how to plot gradient CAM
+        - how to plot CAM
+        - how to plot channel attention to Wandb
     '''
 
     if not args.checkpoints.exists():
@@ -98,7 +101,8 @@ def main(args):
     best_acc = 0.
 
     # If you want to plot GradCAMs over images
-    features = Hook_Feature(model.layer2)
+    layer2 = Hook_Feature(model.layer2, name="model.layer2")
+    layer3 = Hook_Feature(model.layer3, name="model.layer3")
     grads = Hook_Grad(model.layer2)
 
     for epoch in range(args.epochs):
@@ -118,7 +122,7 @@ def main(args):
 
             if i == 0 and args.vis:
                 # plot GradCAM here
-                overlays = compute_gradCAMs(features.features, grads.grad)
+                overlays = compute_gradCAMs(layer2.features, grads.grad)
                 grad_cams = plot_gradcam(overlays, image)
 
                 # If you want to plot images to local
@@ -130,6 +134,10 @@ def main(args):
                 idx += 1
 
 
+            if i == 5 and args.vis:
+                # layer2.plot_attention_to_wandb(epoch)
+                layer3.plot_attention_to_wandb(epoch)
+
             optimizer.step()
             optimizer.zero_grad()
         wandb.log({
@@ -137,6 +145,8 @@ def main(args):
         }, step=epoch)
 
         print(f"Epoch[{epoch}] loss: {clf_loss / len(cifar_loader)}")
+        layer2.clear()
+        layer3.clear()
 
         acc = evaluate_classification(model, cifar_test_loader, epoch=epoch)
         best_acc = log_best_state(model, args.desc, acc, best_acc)

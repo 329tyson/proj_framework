@@ -3,8 +3,9 @@ import torch
 import wandb
 
 import numpy as np
-import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
 import torchvision.utils as vutils
+import torchvision.transforms as transforms
 
 from pathlib import Path
 from torchviz import make_dot
@@ -63,13 +64,42 @@ class Hook_Grad():
 
 
 class Hook_Feature():
-    features = None
-
-    def __init__(self, m):
+    def __init__(self, m, name="default"):
+        '''
+            1. use this function when you need direct access to feature.
+            2. use this function when you want to plot CAM.
+        '''
+        self.count = 0
+        self.name = name
         self.hook = m.register_forward_hook(self.hook_fn)
 
     def hook_fn(self, module, input, output):
+        # assume output is just feature itself.
         self.features = output
+        if not self.count == 0:
+            self.channel_wise_activation = np.mean(output.detach().cpu().numpy(), axis=(0, 2, 3)) + self.channel_wise_activation * self.count
+            self.count += 1
+            self.channel_wise_activation = self.channel_wise_activation / self.count
+        else:
+            self.channel_wise_activation = np.mean(output.detach().cpu().numpy(), axis=(0, 2, 3))
+            self.count += 1
+
+    def plot_attention_to_wandb(self, epoch):
+        '''
+            returns its accumulated average attention in python-dictionary format
+        '''
+        fig, ax = plt.subplots()
+        ax.bar(list(range(len(self.channel_wise_activation))), self.channel_wise_activation, label=self.name, align="center")
+        ax.set_xlabel("Channels")
+        ax.set_ylabel("Attentions")
+        ax.legend()
+
+        wandb.log({
+            self.name: plt,
+        }, step=epoch)
+
+    def clear(self):
+        self.count = 0
 
     def remove(self):
         self.hook.remove()
